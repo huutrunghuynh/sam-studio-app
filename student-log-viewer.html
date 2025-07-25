@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tổng hợp Nhật ký Học viên SAm Studio</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #333;
+        }
+        /* Custom scrollbar for modal content */
+        .modal-content-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        .modal-content-scroll::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        .modal-content-scroll::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        .modal-content-scroll::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 md:p-8">
+
+    <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-lg">
+        <h1 class="text-3xl sm:text-4xl font-bold text-center text-indigo-700 mb-8">Tổng hợp Nhật ký Học viên</h1>
+
+        <!-- Search Input -->
+        <div class="mb-6 p-4 bg-gray-50 rounded-lg shadow-md flex items-center space-x-4">
+            <label for="searchInput" class="text-lg font-semibold text-gray-800">Tìm kiếm học viên:</label>
+            <input type="text" id="searchInput" placeholder="Nhập tên học viên..."
+                   class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-base">
+        </div>
+
+        <!-- Loading and Error Messages -->
+        <div id="loadingMessage" class="mt-4 text-center text-indigo-600 font-medium hidden">
+            Đang tải dữ liệu... Vui lòng chờ.
+        </div>
+        <div id="errorMessage" class="mt-4 text-center text-red-600 font-medium hidden">
+            Có lỗi xảy ra khi tải dữ liệu. Vui lòng kiểm tra URL Apps Script và kết nối mạng.
+        </div>
+
+        <!-- Student Summary Table -->
+        <div class="overflow-x-auto rounded-lg shadow-md">
+            <table class="min-w-full bg-white border-collapse">
+                <thead class="bg-indigo-600 text-white">
+                    <tr>
+                        <th class="py-3 px-4 text-left text-sm font-semibold rounded-tl-lg">STT</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Tên học viên</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Ngày sinh</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Các khóa học</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold rounded-tr-lg">Hành động</th>
+                    </tr>
+                </thead>
+                <tbody id="studentTableBody" class="divide-y divide-gray-200">
+                    <!-- Data will be inserted here by JavaScript -->
+                    <tr>
+                        <td colspan="5" class="text-center py-8 text-gray-500 text-lg">
+                            Đang tải dữ liệu...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Log Detail Modal -->
+    <div id="logModal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="flex justify-between items-center p-6 border-b border-gray-200 bg-indigo-50">
+                <h2 id="modalTitle" class="text-2xl font-semibold text-indigo-800">Nhật ký khóa học</h2>
+                <button id="closeModalBtn" class="text-gray-500 hover:text-gray-700 focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="modalContent" class="p-6 overflow-y-auto modal-content-scroll flex-grow text-gray-700">
+                <!-- Log details will be loaded here -->
+            </div>
+            <div class="p-4 border-t border-gray-200 bg-indigo-50 text-right">
+                <button id="closeModalBtnBottom" class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-200 ease-in-out">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // This array will hold the flattened and consolidated data for the table
+        let allStudentsData = []; // Stores all fetched student data
+        let filteredStudentsData = []; // Stores students after applying search filter
+
+        // HARDCODED GOOGLE APPS SCRIPT WEB APP URL
+        // Vui lòng thay thế URL này bằng URL Web App của bạn đã triển khai.
+        // Đảm bảo URL này là chính xác và Web App của bạn có quyền truy cập "Bất kỳ ai".
+        const GOOGLE_APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyxCyFf7sI95zNURGiRzQ-4roOSQZtI88NflIu1UzEWF78dZGjwxyjetw6zTA030djqeg/exec";
+
+        /**
+         * Fetches data from the Google Apps Script Web App URL.
+         * @param {string} webAppUrl The URL of the deployed Google Apps Script Web App.
+         */
+        async function fetchDataFromWebApp(webAppUrl) {
+            const loadingMessage = document.getElementById('loadingMessage');
+            const errorMessage = document.getElementById('errorMessage');
+            loadingMessage.classList.remove('hidden');
+            errorMessage.classList.add('hidden');
+            
+            // Clear previous data and show loading message
+            allStudentsData = []; 
+            filteredStudentsData = [];
+            renderStudentTable(); // Render empty table with loading message
+            loadingMessage.classList.remove('hidden');
+
+            // Add a cache-busting parameter (timestamp) to the URL
+            const urlWithCacheBuster = `${webAppUrl}?timestamp=${new Date().getTime()}`;
+            console.log('Fetching data from:', urlWithCacheBuster); // Log the URL being fetched
+
+            try {
+                const response = await fetch(urlWithCacheBuster); // Use the URL with cache-buster
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                let data;
+                try {
+                    data = await response.json(); // This is where the JSON parsing happens
+                    console.log('Received data from Web App:', data); // Log the raw data
+                } catch (jsonError) {
+                    errorMessage.textContent = `Lỗi phân tích dữ liệu JSON từ Apps Script: ${jsonError.message}. Dữ liệu có thể không hợp lệ.`;
+                    errorMessage.classList.remove('hidden');
+                    console.error("JSON parsing error:", jsonError);
+                    return;
+                }
+
+                if (data.error) {
+                    errorMessage.textContent = `Lỗi từ Web App: ${data.error}`;
+                    errorMessage.classList.remove('hidden');
+                    console.error("Error from Web App:", data.error);
+                    return;
+                }
+
+                // Assuming Apps Script now returns an object like { students: [...] }
+                if (data && Array.isArray(data.students)) {
+                    // Assign unique IDs to students for easier lookup
+                    allStudentsData = data.students.map((student, index) => {
+                        return {
+                            ...student,
+                            id: index + 1,
+                            // Ensure 'courses' is always an array, even if it's missing or not an array from Apps Script
+                            courses: Array.isArray(student.courses) ? student.courses : [] 
+                        };
+                    });
+                    applySearchFilter(); // Apply initial filter (empty search string)
+                } else {
+                    errorMessage.textContent = `Dữ liệu nhận được từ Apps Script không hợp lệ hoặc không chứa mảng học viên.`;
+                    errorMessage.classList.remove('hidden');
+                    console.error("Invalid data structure from Web App:", data);
+                }
+            } catch (error) {
+                errorMessage.textContent = `Không thể tải dữ liệu: ${error.message}. Vui lòng kiểm tra URL Apps Script và kết nối mạng.`;
+                errorMessage.classList.remove('hidden');
+                console.error("Error fetching data:", error);
+            } finally {
+                loadingMessage.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Applies the search filter to allStudentsData and updates filteredStudentsData.
+         */
+        function applySearchFilter() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+            if (searchTerm === "") {
+                filteredStudentsData = [...allStudentsData]; // Show all if search is empty
+            } else {
+                filteredStudentsData = allStudentsData.filter(student =>
+                    student.name.toLowerCase().includes(searchTerm)
+                );
+            }
+            renderStudentTable(); // Re-render the table with filtered data
+        }
+
+        /**
+         * Renders the student summary table based on the filteredStudentsData array.
+         */
+        function renderStudentTable() {
+            const tableBody = document.getElementById('studentTableBody');
+            tableBody.innerHTML = ''; // Clear existing rows
+
+            if (filteredStudentsData.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center py-8 text-gray-500 text-lg">
+                            Không tìm thấy học viên nào phù hợp hoặc không có dữ liệu.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            filteredStudentsData.forEach((student, index) => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+
+                // Safely get coursesDisplay, ensuring student.courses is an array
+                // Use optional chaining and nullish coalescing for robustness
+                const coursesDisplay = student.courses?.map(c => c.courseName).join(', ') || 'N/A';
+
+                row.innerHTML = `
+                    <td class="py-3 px-4 text-sm text-gray-800">${index + 1}</td>
+                    <td class="py-3 px-4 text-sm text-gray-800">${student.name}</td>
+                    <td class="py-3 px-4 text-sm text-gray-800">${student.dob}</td>
+                    <td class="py-3 px-4 text-sm text-gray-800">${coursesDisplay}</td>
+                    <td class="py-3 px-4 text-sm text-gray-800">
+                        <button onclick="showLogModal(${student.id})"
+                                class="px-4 py-2 bg-indigo-500 text-white text-sm rounded-md hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-200 ease-in-out">
+                            Xem nhật ký
+                        </button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Get modal elements
+        const logModal = document.getElementById('logModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalContent = document.getElementById('modalContent');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const closeModalBtnBottom = document.getElementById('closeModalBtnBottom');
+        const searchInput = document.getElementById('searchInput');
+
+        /**
+         * Displays the log detail modal for a specific student.
+         * Includes a dropdown to select the course and then the level to view.
+         * @param {number} studentId The ID of the student to show the log for.
+         */
+        function showLogModal(studentId) {
+            const student = allStudentsData.find(s => s.id === studentId); // Find from all data, not just filtered
+            if (!student) {
+                console.error("Student not found:", studentId);
+                return;
+            }
+
+            modalTitle.textContent = `Nhật ký của ${student.name}`;
+            modalContent.innerHTML = ''; // Clear previous content
+
+            const studentCourses = student.courses;
+
+            if (studentCourses.length === 0) {
+                modalContent.innerHTML = '<p class="text-red-500">Không tìm thấy nhật ký khóa học nào cho học viên này.</p>';
+                logModal.classList.remove('hidden');
+                return;
+            }
+
+            // Create a dropdown for courses
+            const courseSelectDiv = document.createElement('div');
+            courseSelectDiv.className = 'mb-4';
+            courseSelectDiv.innerHTML = `
+                <label for="courseSelector" class="block text-sm font-medium text-gray-700 mb-2">Chọn khóa học:</label>
+                <select id="courseSelector" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                    ${studentCourses.map((course, index) => `<option value="${index}">${course.courseName}</option>`).join('')}
+                </select>
+            `;
+            modalContent.appendChild(courseSelectDiv);
+
+            // Area for level selection and log display
+            const courseLogDisplayArea = document.createElement('div');
+            courseLogDisplayArea.id = 'courseLogDisplayArea';
+            modalContent.appendChild(courseLogDisplayArea);
+
+            /**
+             * Renders the log details for a given course and level within the modal.
+             * @param {number} courseIndex The index of the course in student.courses array.
+             * @param {string} selectedLevel The level (e.g., "CẤP ĐỘ 1") to display.
+             */
+            const renderLogForCourseAndLevel = (courseIndex, selectedLevel) => {
+                courseLogDisplayArea.innerHTML = ''; // Clear previous content
+                const selectedCourse = studentCourses[courseIndex];
+                if (!selectedCourse) {
+                    courseLogDisplayArea.innerHTML = '<p class="text-red-500">Không tìm thấy khóa học này.</p>';
+                    return;
+                }
+
+                const levels = Object.keys(selectedCourse.levels);
+
+                if (levels.length === 0) {
+                    courseLogDisplayArea.innerHTML = '<p class="text-red-500">Không tìm thấy cấp độ nào cho khóa học này.</p>';
+                    return;
+                }
+
+                // Create a dropdown for levels within the selected course
+                const levelSelectDiv = document.createElement('div');
+                levelSelectDiv.className = 'mb-4';
+                levelSelectDiv.innerHTML = `
+                    <label for="levelSelectorInner" class="block text-sm font-medium text-gray-700 mb-2">Chọn cấp độ trong khóa ${selectedCourse.courseName}:</label>
+                    <select id="levelSelectorInner" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                        ${levels.map(level => `<option value="${level}" ${level === selectedLevel ? 'selected' : ''}>${level}</option>`).join('')}
+                    </select>
+                `;
+                courseLogDisplayArea.appendChild(levelSelectDiv);
+
+                const logDetailsArea = document.createElement('div');
+                logDetailsArea.id = 'logDetailsArea';
+                courseLogDisplayArea.appendChild(logDetailsArea);
+
+                const logDetails = selectedCourse.levels[selectedLevel];
+
+                if (logDetails) {
+                    // Buổi trải nghiệm
+                    const experienceSession = document.createElement('div');
+                    experienceSession.className = 'mb-4 p-3 bg-indigo-50 rounded-lg shadow-sm';
+                    experienceSession.innerHTML = `
+                        <h3 class="font-semibold text-lg text-indigo-700 mb-2">Buổi trải nghiệm:</h3>
+                        <p class="text-gray-700">${logDetails["Buổi trải nghiệm"] || 'Không có nội dung.'}</p>
+                    `;
+                    logDetailsArea.appendChild(experienceSession);
+
+                    // Buổi học 1-12 - ALWAYS RENDER, show "Không có nội dung." if empty
+                    for (let i = 1; i <= 12; i++) {
+                        const sessionKey = `Buổi ${i}`;
+                        const sessionContent = logDetails[sessionKey] || 'Không có nội dung.'; // Get content or default message
+                        const sessionDiv = document.createElement('div');
+                        sessionDiv.className = 'mb-4 p-3 bg-gray-50 rounded-lg shadow-sm';
+                        sessionDiv.innerHTML = `
+                            <h3 class="font-semibold text-lg text-gray-800 mb-2">${sessionKey}:</h3>
+                            <p class="text-gray-700">${sessionContent}</p>
+                        `;
+                        logDetailsArea.appendChild(sessionDiv);
+                    }
+
+                    // Quà tặng
+                    const giftSession = document.createElement('div');
+                    giftSession.className = 'mb-4 p-3 bg-green-50 rounded-lg shadow-sm';
+                    giftSession.innerHTML = `
+                        <h3 class="font-semibold text-lg text-green-700 mb-2">Quà tặng:</h3>
+                        <p class="text-gray-700">${logDetails["Quà tặng"] || 'Không có nội dung.'}</p>
+                    `;
+                    logDetailsArea.appendChild(giftSession);
+
+                } else {
+                    logDetailsArea.innerHTML = '<p class="text-red-500">Không tìm thấy nhật ký cho cấp độ này.</p>';
+                }
+
+                // Add event listener to the inner level dropdown
+                document.getElementById('levelSelectorInner').addEventListener('change', (event) => {
+                    renderLogForCourseAndLevel(courseIndex, event.target.value);
+                });
+            };
+
+            // Initial render for the first course and its first available level
+            const initialCourseIndex = 0;
+            const initialLevel = studentCourses[initialCourseIndex].levels ? Object.keys(studentCourses[initialCourseIndex].levels)[0] : null;
+            if (initialLevel) {
+                renderLogForCourseAndLevel(initialCourseIndex, initialLevel);
+            } else {
+                courseLogDisplayArea.innerHTML = '<p class="text-red-500">Không có cấp độ nào khả dụng cho khóa học này.</p>';
+            }
+            
+
+            // Add event listener to the course dropdown
+            document.getElementById('courseSelector').addEventListener('change', (event) => {
+                const selectedCourseIndex = parseInt(event.target.value);
+                const selectedCourse = studentCourses[selectedCourseIndex];
+                const firstLevelOfSelectedCourse = selectedCourse.levels ? Object.keys(selectedCourse.levels)[0] : null;
+                if (firstLevelOfSelectedCourse) {
+                    renderLogForCourseAndLevel(selectedCourseIndex, firstLevelOfSelectedCourse);
+                } else {
+                    courseLogDisplayArea.innerHTML = '<p class="text-red-500">Không có cấp độ nào khả dụng cho khóa học này.</p>';
+                }
+            });
+
+            logModal.classList.remove('hidden'); // Show the modal
+        }
+
+        // Function to hide the log detail modal
+        function hideLogModal() {
+            logModal.classList.add('hidden'); // Hide the modal
+        }
+
+        // Event listeners for closing modal
+        closeModalBtn.addEventListener('click', hideLogModal);
+        closeModalBtnBottom.addEventListener('click', hideLogModal);
+        // Close modal when clicking outside of it
+        logModal.addEventListener('click', (e) => {
+            if (e.target === logModal) {
+                hideLogModal();
+            }
+        });
+
+        // Event listener for search input
+        searchInput.addEventListener('input', applySearchFilter);
+
+        // Automatically load data when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchDataFromWebApp(GOOGLE_APPS_SCRIPT_WEB_APP_URL);
+        });
+    </script>
+</body>
+</html>
