@@ -35,10 +35,16 @@
         <h1 class="text-3xl sm:text-4xl font-bold text-center text-indigo-700 mb-8">Tổng hợp Nhật ký Học viên</h1>
 
         <!-- Search Input -->
-        <div class="mb-6 p-4 bg-gray-50 rounded-lg shadow-md flex items-center space-x-4">
-            <label for="searchInput" class="text-lg font-semibold text-gray-800">Tìm kiếm học viên:</label>
+        <div class="mb-6 p-4 bg-gray-50 rounded-lg shadow-md flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4">
+            <label for="searchInput" class="text-lg font-semibold text-gray-800 whitespace-nowrap">Tìm kiếm học viên:</label>
             <input type="text" id="searchInput" placeholder="Nhập tên học viên..."
-                   class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-base">
+                   class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-base w-full sm:w-auto">
+            
+            <label for="courseFilterSelect" class="text-lg font-semibold text-gray-800 whitespace-nowrap">Lọc theo khóa học:</label>
+            <select id="courseFilterSelect" class="p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-base w-full sm:w-auto">
+                <option value="all">Tất cả khóa học</option>
+                <!-- Course options will be populated by JavaScript -->
+            </select>
         </div>
 
         <!-- Loading and Error Messages -->
@@ -57,6 +63,7 @@
                         <th class="py-3 px-4 text-left text-sm font-semibold rounded-tl-lg">STT</th>
                         <th class="py-3 px-4 text-left text-sm font-semibold">Tên học viên</th>
                         <th class="py-3 px-4 text-left text-sm font-semibold">Ngày sinh</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Lịch học cố định</th>
                         <th class="py-3 px-4 text-left text-sm font-semibold">Các khóa học</th>
                         <th class="py-3 px-4 text-left text-sm font-semibold rounded-tr-lg">Hành động</th>
                     </tr>
@@ -64,7 +71,7 @@
                 <tbody id="studentTableBody" class="divide-y divide-gray-200">
                     <!-- Data will be inserted here by JavaScript -->
                     <tr>
-                        <td colspan="5" class="text-center py-8 text-gray-500 text-lg">
+                        <td colspan="6" class="text-center py-8 text-gray-500 text-lg">
                             Đang tải dữ liệu...
                         </td>
                     </tr>
@@ -99,7 +106,7 @@
         // HARDCODED GOOGLE APPS SCRIPT WEB APP URL
         // Vui lòng thay thế URL này bằng URL Web App của bạn đã triển khai.
         // Đảm bảo URL này là chính xác và Web App của bạn có quyền truy cập "Bất kỳ ai".
-        const GOOGLE_APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyxCyFf7sI95zNURGiRzQ-4roOSQZtI88NflIu1UzEWF78dZGjwxyjetw6zTA030djqeg/exec";
+        const GOOGLE_APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyydDz5a9DssicahLWatAdHiv6MCDK4VcevEc9UiLL8eMe-ZTi-Cm-TKki0WwDCxu5JWw/exec";
 
         /**
          * Fetches data from the Google Apps Script Web App URL.
@@ -155,7 +162,8 @@
                             courses: Array.isArray(student.courses) ? student.courses : [] 
                         };
                     });
-                    applySearchFilter(); // Apply initial filter (empty search string)
+                    populateCourseFilter(); // Populate the course filter dropdown
+                    applyFilters(); // Apply initial search and course filters
                 } else {
                     errorMessage.textContent = `Dữ liệu nhận được từ Apps Script không hợp lệ hoặc không chứa mảng học viên.`;
                     errorMessage.classList.remove('hidden');
@@ -171,17 +179,45 @@
         }
 
         /**
-         * Applies the search filter to allStudentsData and updates filteredStudentsData.
+         * Populates the course filter dropdown with unique course names.
          */
-        function applySearchFilter() {
+        function populateCourseFilter() {
+            const courseFilterSelect = document.getElementById('courseFilterSelect');
+            courseFilterSelect.innerHTML = '<option value="all">Tất cả khóa học</option>'; // Reset and add default option
+
+            const uniqueCourses = new Set();
+            allStudentsData.forEach(student => {
+                student.courses.forEach(course => {
+                    if (course.courseName) {
+                        uniqueCourses.add(course.courseName);
+                    }
+                });
+            });
+
+            // Convert Set to Array, sort alphabetically, and add to dropdown
+            Array.from(uniqueCourses).sort().forEach(courseName => {
+                const option = document.createElement('option');
+                option.value = courseName;
+                option.textContent = courseName;
+                courseFilterSelect.appendChild(option);
+            });
+        }
+
+        /**
+         * Applies both search and course filters to allStudentsData.
+         */
+        function applyFilters() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
-            if (searchTerm === "") {
-                filteredStudentsData = [...allStudentsData]; // Show all if search is empty
-            } else {
-                filteredStudentsData = allStudentsData.filter(student =>
-                    student.name.toLowerCase().includes(searchTerm)
-                );
-            }
+            const selectedCourse = document.getElementById('courseFilterSelect').value;
+
+            filteredStudentsData = allStudentsData.filter(student => {
+                const matchesSearch = student.name.toLowerCase().includes(searchTerm);
+                
+                const matchesCourse = selectedCourse === 'all' || 
+                                      student.courses.some(course => course.courseName === selectedCourse);
+                
+                return matchesSearch && matchesCourse;
+            });
             renderStudentTable(); // Re-render the table with filtered data
         }
 
@@ -195,7 +231,7 @@
             if (filteredStudentsData.length === 0) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="5" class="text-center py-8 text-gray-500 text-lg">
+                        <td colspan="6" class="text-center py-8 text-gray-500 text-lg">
                             Không tìm thấy học viên nào phù hợp hoặc không có dữ liệu.
                         </td>
                     </tr>
@@ -207,14 +243,13 @@
                 const row = document.createElement('tr');
                 row.className = 'hover:bg-gray-50';
 
-                // Safely get coursesDisplay, ensuring student.courses is an array
-                // Use optional chaining and nullish coalescing for robustness
                 const coursesDisplay = student.courses?.map(c => c.courseName).join(', ') || 'N/A';
 
                 row.innerHTML = `
                     <td class="py-3 px-4 text-sm text-gray-800">${index + 1}</td>
                     <td class="py-3 px-4 text-sm text-gray-800">${student.name}</td>
                     <td class="py-3 px-4 text-sm text-gray-800">${student.dob}</td>
+                    <td class="py-3 px-4 text-sm text-gray-800">${student.fixedSchedule || 'N/A'}</td>
                     <td class="py-3 px-4 text-sm text-gray-800">${coursesDisplay}</td>
                     <td class="py-3 px-4 text-sm text-gray-800">
                         <button onclick="showLogModal(${student.id})"
@@ -234,6 +269,7 @@
         const closeModalBtn = document.getElementById('closeModalBtn');
         const closeModalBtnBottom = document.getElementById('closeModalBtnBottom');
         const searchInput = document.getElementById('searchInput');
+        const courseFilterSelect = document.getElementById('courseFilterSelect');
 
         /**
          * Displays the log detail modal for a specific student.
@@ -262,8 +298,8 @@
             const courseSelectDiv = document.createElement('div');
             courseSelectDiv.className = 'mb-4';
             courseSelectDiv.innerHTML = `
-                <label for="courseSelector" class="block text-sm font-medium text-gray-700 mb-2">Chọn khóa học:</label>
-                <select id="courseSelector" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                <label for="modalCourseSelector" class="block text-sm font-medium text-gray-700 mb-2">Chọn khóa học:</label>
+                <select id="modalCourseSelector" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
                     ${studentCourses.map((course, index) => `<option value="${index}">${course.courseName}</option>`).join('')}
                 </select>
             `;
@@ -364,7 +400,7 @@
             
 
             // Add event listener to the course dropdown
-            document.getElementById('courseSelector').addEventListener('change', (event) => {
+            document.getElementById('modalCourseSelector').addEventListener('change', (event) => {
                 const selectedCourseIndex = parseInt(event.target.value);
                 const selectedCourse = studentCourses[selectedCourseIndex];
                 const firstLevelOfSelectedCourse = selectedCourse.levels ? Object.keys(selectedCourse.levels)[0] : null;
@@ -393,8 +429,10 @@
             }
         });
 
-        // Event listener for search input
-        searchInput.addEventListener('input', applySearchFilter);
+        // Event listeners for filters
+        searchInput.addEventListener('input', applyFilters);
+        courseFilterSelect.addEventListener('change', applyFilters);
+
 
         // Automatically load data when the DOM is fully loaded
         document.addEventListener('DOMContentLoaded', () => {
